@@ -21,6 +21,7 @@ import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.incremental.IncrementalTaskInputs
 
@@ -57,6 +58,8 @@ class CompileThrift extends DefaultTask {
 	boolean strict
 	boolean verbose
 	boolean debug
+    
+    SourceSet thriftContainedSourceSet
 
 	def thriftExecutable(Object thriftExecutable) {
 		this.thriftExecutable = String.valueOf(thriftExecutable)
@@ -215,24 +218,15 @@ class CompileThrift extends DefaultTask {
 		if (genJava == oldOutputDir)
 			return
 
+        def sourceSet = thriftContainedSourceSet ?: project.sourceSets.main    
 		if (oldOutputDir != null)
-			project.sourceSets.main.java.srcDirs -= oldOutputDir
-		project.sourceSets.main.java.srcDir genJava.absolutePath
+			sourceSet.java.srcDirs -= oldOutputDir
+		sourceSet.java.srcDir genJava.absolutePath
 
-		compileJava.dependsOn this
+        if(sourceSet == null || sourceSet == project.sourceSets.main)
+		    compileJava.dependsOn this
 	}
-
-	private def addSourceDir(File oldOutputDir) {
-		if (project.plugins.hasPlugin('java'))
-			makeAsDependency(oldOutputDir)
-		else {
-			project.plugins.whenPluginAdded { plugin ->
-				if (plugin instanceof JavaPlugin)
-					makeAsDependency(oldOutputDir)
-			}
-		}
-	}
-
+    
 	def convertToFile(Object item) {
 		if (item instanceof File) {
 			return item
@@ -253,5 +247,16 @@ class CompileThrift extends DefaultTask {
 		if (createGenFolder)
 			currentOutputDir = new File(currentOutputDir, 'gen-java')
 		return currentOutputDir
+	}
+
+	private def addSourceDir(File oldOutputDir) {
+		if (project.plugins.hasPlugin('java'))
+			makeAsDependency(oldOutputDir)
+		else {
+			project.plugins.whenPluginAdded { plugin ->
+				if (plugin instanceof JavaPlugin)
+					makeAsDependency(oldOutputDir)
+			}
+		}
 	}
 }
