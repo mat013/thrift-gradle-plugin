@@ -18,10 +18,7 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
 import org.gradle.api.Task
 import org.gradle.api.plugins.JavaPlugin
-import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.InputFiles
-import org.gradle.api.tasks.OutputDirectory
-import org.gradle.api.tasks.TaskAction
+import org.gradle.api.tasks.*
 import org.gradle.api.tasks.incremental.IncrementalTaskInputs
 
 class CompileThrift extends DefaultTask {
@@ -58,6 +55,16 @@ class CompileThrift extends DefaultTask {
 	boolean verbose
 	boolean debug
 
+	SourceSet thriftContainedSourceSet
+
+	CompileThrift() {
+		this(null)
+	}
+
+	CompileThrift(SourceSet thriftContainedSourceSet) {
+		this.thriftContainedSourceSet = thriftContainedSourceSet
+	}
+
 	def thriftExecutable(Object thriftExecutable) {
 		this.thriftExecutable = String.valueOf(thriftExecutable)
 	}
@@ -75,11 +82,7 @@ class CompileThrift extends DefaultTask {
 	def outputDir(Object outputDir) {
 		if (!(outputDir instanceof File))
 			outputDir = project.file(outputDir)
-		if (this.outputDir == outputDir)
-			return
-		def oldOutputDir = currentOutputDir()
 		this.outputDir = outputDir
-		addSourceDir(oldOutputDir)
 	}
 
 	def includeDir(Object includeDir) {
@@ -103,15 +106,26 @@ class CompileThrift extends DefaultTask {
 	}
 
 	def createGenFolder(boolean createGenFolder) {
-		if (this.createGenFolder == createGenFolder)
-			return
-		def oldOutputDir = currentOutputDir()
 		this.createGenFolder = createGenFolder
-		addSourceDir(oldOutputDir)
 	}
 
 	@TaskAction
 	def compileThrift(IncrementalTaskInputs inputs) {
+
+		if(hasJavaPluginBeenApplied()) {
+			if(createGenFolder) {
+				outputDir = new File(outputDir, "gen-java")
+			}
+
+			if(isSourceSetDefaultOrJavaMain(thriftContainedSourceSet)) {
+				thriftContainedSourceSet = project.sourceSets.main
+
+				Task compileJava = project.tasks.getByName(JavaPlugin.COMPILE_JAVA_TASK_NAME)
+				compileJava.dependsOn this
+			}
+
+			thriftContainedSourceSet.java.srcDir outputDir
+		}
 
 		if (!inputs.incremental) {
 			compileAll()
@@ -205,53 +219,27 @@ class CompileThrift extends DefaultTask {
 			throw new GradleException("Failed to compile ${source}, exit=${exitCode}")
 	}
 
-	def makeAsDependency(File oldOutputDir) {
-		Task compileJava = project.tasks.getByName(JavaPlugin.COMPILE_JAVA_TASK_NAME);
-		if (compileJava == null)
-			return
-
-		generators['java'] = ''
-		def genJava = currentOutputDir().canonicalFile
-		if (genJava == oldOutputDir)
-			return
-
-		if (oldOutputDir != null)
-			project.sourceSets.main.java.srcDirs -= oldOutputDir
-		project.sourceSets.main.java.srcDir genJava.absolutePath
-
-		compileJava.dependsOn this
-	}
-
-	private def addSourceDir(File oldOutputDir) {
-		if (project.plugins.hasPlugin('java'))
-			makeAsDependency(oldOutputDir)
-		else {
-			project.plugins.whenPluginAdded { plugin ->
-				if (plugin instanceof JavaPlugin)
-					makeAsDependency(oldOutputDir)
-			}
-		}
-	}
-
 	def convertToFile(Object item) {
 		if (item instanceof File) {
 			return item
 		}
 
-		def result = new File(item.toString());
+		def result = new File(item.toString())
 		if(result.exists()) {
-			return result;
+			return result
 		}
 
 		project.file(item)
 	}
 
-	private def currentOutputDir() {
-		def currentOutputDir = outputDir
-		if (currentOutputDir == null)
-			return null
-		if (createGenFolder)
-			currentOutputDir = new File(currentOutputDir, 'gen-java')
-		return currentOutputDir
+
+	private boolean hasJavaPluginBeenApplied() {
+		def hasJavaPluginBeenApplied = project.plugins.hasPlugin('java')
+		hasJavaPluginBeenApplied
 	}
+
+	private boolean isSourceSetDefaultOrJavaMain(SourceSet sourceSet) {
+		sourceSet == null || sourceSet == project.sourceSets.main
+	}
+
 }
